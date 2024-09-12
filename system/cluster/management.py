@@ -1,49 +1,41 @@
 from collections import defaultdict
-from functions import (
-    faiss_search,
-    ncl_lsh,
-)
 from cluster import (
     ClusterInstance,
     ActiveClusterFeatureVector,
     DeactiveClusterFeatureVector,
 )
-from model import DenseEncoder
+from config import Strategy
 from typing import List
-import numpy as np
 
 
 class ClusterManager:
-    def __init__(self, encoder: DenseEncoder, similarity_func, init_cluster_num=10):
+    def __init__(self, strategy: Strategy, init_cluster_num=10):
         self.time_step = 0
-        self.encoder = encoder
         self.init_centroid_num = init_cluster_num
         self.centroid_id = 0
         self.assignment_table = defaultdict(list)  # 클러스터 id: 할당된 인스턴스 번호
         self.instance_memory = {}  # 인스턴스 id : 인스턴스 데이터
         self.centroid_memory = {}  # 클러스터 id: 클러스터 데이터
         self.active_threshold = 0.1
-        self.similarity_func = similarity_func
-        self.deactive_cluster_manager = DeactivedClusterManager(
-            encoder=self.encoder, similarity_func=self.similarity_func
+        self.strategy = strategy
+        self.deactive_cluster_manager = DeactivedClusterManager(strategy=strategy)
+
+    def find_closest_centroid(self, x: ClusterInstance) -> ActiveClusterFeatureVector:
+        I = self.find_closest_centroid_ids(x)[0]
+        return self.centroid_memory[I]
+
+    def find_closest_centroid_ids(self, x: ClusterInstance) -> List[int]:
+        I = self.strategy.get_closest_cluster_indice(
+            query=x, k=1, data=self.centroid_memory.values()
         )
-
-    def find_closest_centroid(self, x_mean_emb) -> ActiveClusterFeatureVector:
-        return self.find_closest_centroids(x_mean_emb=x_mean_emb, k=1)[0]
-
-    def find_closest_centroids(self, x_mean_emb, k) -> ActiveClusterFeatureVector:
-        centroids = self.centroid_memory.values()
-        embeddings = np.array([c.get_mean() for c in centroids])
-        I = faiss_search(query=x_mean_emb, k=k, data=embeddings)
-        return [centroids[I[i]].centroid_id for i in I]
+        return I
 
     def _find_prototype(self, cfv: ActiveClusterFeatureVector) -> ClusterInstance:
         instances = [
             self.instance_memory[x_id]
             for x_id in self.assignment_table[cfv.centroid_id]
         ]
-        embeddings = np.array([x.mean_emb for x in instances])
-        I = faiss_search(query=cfv.get_mean(), k=1, data=embeddings)
+        I = self.strategy.get_closet_instance_indice(query=cfv, k=1, data=instances)[0]
         return instances[I]
 
     def _evict_cluster(self):
@@ -102,12 +94,10 @@ class ClusterManager:
         if self.centroid_id < self.init_centroid_num:
             self._add_centroid(x, current_time_step)
         else:
-            new_centroid = self.find_closest_centroid(x.mean_emb)
-            old_centroid = self.deactive_cluster_manager.find_closest_centroid(
-                x.mean_emb
-            )
-            new_distance = self.similarity_func(x.mean_emb, new_centroid.get_mean())
-            old_distance = self.similarity_func(x.mean_emb, old_centroid.get_mean())
+            new_centroid = self.find_closest_centroid(x)
+            old_centroid = self.deactive_cluster_manager.find_closest_centroid(x)
+            new_distance = self.strategy.get_distance(x, new_centroid)
+            old_distance = self.strategy.get_distance(x, old_centroid)
             centroid = new_centroid if new_distance < old_distance else old_centroid
             distance = min(new_distance, old_distance)
 
@@ -129,9 +119,8 @@ class ClusterManager:
 
 
 class DeactivedClusterManager:
-    def __init__(self, encoder: DenseEncoder, similarity_func):
-        self.encoder = encoder
-        self.similarity_func = similarity_func
+    def __init__(self, strategy: Strategy):
+        self.strategy = strategy
         self.centroid_memory = {}
 
     def update(self, cfv: ActiveClusterFeatureVector, prototype: ClusterInstance):
@@ -144,21 +133,18 @@ class DeactivedClusterManager:
         )
         self.centroid_memory[deactivated.centroid_id] = deactivated
 
-    def find_closest_centroid(self, x_mean_emb) -> DeactiveClusterFeatureVector:
-        centroids = self.centroid_memory.values()
-        embeddings = np.array([c.get_mean() for c in centroids])
-        I = faiss_search(query=x_mean_emb, k=1, data=embeddings)
-        return centroids[I].centroid_id
+    def find_closest_centroid(self, x: ClusterInstance) -> DeactiveClusterFeatureVector:
+        I = self.strategy.get_closest_cluster_indice(
+            query=x, k=1, data=self.centroid_memory.values()
+        )[0]
+        return self.centroid_memory[I]
 
     def discard(self) -> List[int]:
         discarded_clusters = []
         for c_id in self.centroid_memory.keys():
             _discarded: DeactiveClusterFeatureVector = self.centroid_memory[c_id]
-            E0, E_cur = (
-                _discarded.prototype.mean_emb,
-                self.encoder.encode(_discarded.prototype.passage)[0],
-            )  # self._get_current_prototype_embedding(_discarded.prototype)
-            if _discarded.get_std() <= self.similarity_func(E0, E_cur):
+            prototype: ClusterInstance = _discarded.prototype
+            if _discarded.get_std() <= self.strategy.get_repr_drift(prototype):
                 discarded_clusters.append(c_id)
                 del self.centroid_memory[c_id]
         return discarded_clusters

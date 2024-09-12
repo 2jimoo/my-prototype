@@ -68,8 +68,6 @@ class DeactiveClusterFeatureVector:
         self.S1 = S1
         self.S2 = S2
         self.prototype = prototype
-        # self.E0 = E0
-        # self.w = w
 
     def get_centroid_id(self):
         return self.centroid_id

@@ -1,5 +1,12 @@
 import torch
-from cluster import ClusterManager, SamplingResult
+from cluster import (
+    ClusterManager,
+    SamplingResult,
+    ClusterInstance,
+    ActiveClusterFeatureVector,
+)
+from config import Strategy
+from typing import List
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -8,36 +15,40 @@ else:
 
 
 class NCLSampler:
-    def __init__(self, cluster_manager: ClusterManager, similarity_func):
+    def __init__(self, cluster_manager: ClusterManager):
         self.cluster_manager = cluster_manager
-        self.similarity_func = similarity_func
+        self.strategy = cluster_manager.strategy
 
-    def get_weak_samples(self, anchor, k) -> SamplingResult:
+    def get_weak_samples(self, anchor_mean_emb, anchor_token_embs, k) -> SamplingResult:
+        x: ClusterInstance = ClusterInstance()
+        x.mean_emb = anchor_mean_emb
+        x.token_embs = anchor_token_embs
+
         positive_centroid_id, negative_centroid_id = (
-            self.cluster_manager.find_closest_centroids(x_mean_emb=anchor, k=2)
+            self.cluster_manager.find_closest_centroid_ids(x=x, k=2)
         )
         current_time = self.cluster_manager.time_step
 
-        positive_centroid = self.cluster_manager.centroid_memory[positive_centroid_id]
-        positive_centroid_emb = positive_centroid.get_mean()
-        positive_candidates = [
-            x.mean_emb
-            for x in self.cluster_manager.assignment_table[positive_centroid_id]
+        positive_centroid: ActiveClusterFeatureVector = (
+            self.cluster_manager.centroid_memory[positive_centroid_id]
+        )
+        positive_candidates = self.cluster_manager.assignment_table[
+            positive_centroid_id
         ]
         positive_samples = self._find_bottom_k_positive_samples(
-            anchor, k, positive_centroid_emb, positive_candidates
+            x, k, positive_centroid, positive_candidates
         )
         positive_weight = positive_centroid.get_weight(current_time)
         positive_weights = [positive_weight] * len(positive_samples)
 
-        negative_centroid = self.cluster_manager.centroid_memory[negative_centroid_id]
-        negative_centroid_emb = negative_centroid.get_mean()
-        negative_candidates = [
-            x.mean_emb
-            for x in self.cluster_manager.assignment_table[negative_centroid_id]
+        negative_centroid: ActiveClusterFeatureVector = (
+            self.cluster_manager.centroid_memory[negative_centroid_id]
+        )
+        negative_candidates = self.cluster_manager.assignment_table[
+            negative_centroid_id
         ]
         negative_samples = self._find_top_k_negative_samples(
-            anchor, k, negative_centroid_emb, negative_candidates
+            x, k, negative_centroid, negative_candidates
         )
         negative_weight = negative_centroid.get_weight(current_time)
         negative_weights = [negative_weight] * len(negative_samples)
@@ -49,7 +60,13 @@ class NCLSampler:
             negative_weights=negative_weights,
         )
 
-    def _find_top_k_negative_samples(self, anchor, k, centroid, instances):
+    def _find_top_k_negative_samples(
+        self,
+        anchor: ClusterInstance,
+        k,
+        centroid: ActiveClusterFeatureVector,
+        instances: List[ClusterInstance],
+    ):
         if len(instances) <= k:
             return instances
 
@@ -57,8 +74,8 @@ class NCLSampler:
         centroid = centroid.to(device)
         instances = instances.to(device)
 
-        sim_anchor_instances = self.similarity_func(anchor, instances)  # (n,)
-        sim_anchor_centroid = self.similarity_func(anchor, centroid)  # (1,)
+        sim_anchor_instances = self.strategy.get_distance(anchor, instances)  # (n,)
+        sim_anchor_centroid = self.strategy.get_distance(anchor, centroid)  # (1,)
 
         closer_to_anchor_mask = sim_anchor_instances > sim_anchor_centroid
         filtered_similarities = sim_anchor_instances[closer_to_anchor_mask]
@@ -79,7 +96,13 @@ class NCLSampler:
         )  # 유사도 값도 CPU로 변환 후 반환
         return instances[top_k_indices]
 
-    def _find_bottom_k_positive_samples(self, anchor, k, centroid, instances):
+    def _find_bottom_k_positive_samples(
+        self,
+        anchor: ClusterInstance,
+        k,
+        centroid: ActiveClusterFeatureVector,
+        instances: List[ClusterInstance],
+    ):
         if len(instances) <= k:
             return instances
 
@@ -87,8 +110,8 @@ class NCLSampler:
         centroid = centroid.to(device)
         instances = instances.to(device)
 
-        sim_anchor_instances = self.similarity_func(anchor, instances)  # (n,)
-        sim_anchor_centroid = self.similarity_func(anchor, centroid)  # (1,)
+        sim_anchor_instances = self.strategy.get_distance(anchor, instances)  # (n,)
+        sim_anchor_centroid = self.strategy.get_distance(anchor, centroid)  # (1,)
 
         closer_to_anchor_mask = sim_anchor_instances < sim_anchor_centroid
         filtered_similarities = sim_anchor_instances[closer_to_anchor_mask]

@@ -2,16 +2,14 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from system import (
+    read_doc_dataset,
     DenseEncoder,
     InfoNCELoss,
     NCLCompatibleInfoNCELoss,
     ClusterManager,
     NCLSampler,
     SamplingResult,
-    read_doc_dataset,
-    calculate_cosine_similarity,
-    calculate_term,
-    calculate_term_regl,
+    MeanPoolingCosineSimilartyStrategy,
 )
 
 if torch.backends.mps.is_available():
@@ -21,10 +19,10 @@ else:
 
 
 def train_model(
-    encoder: DenseEncoder,
+    encoder,
     loss_fn,
-    cluster_manager: ClusterManager,
-    sampler: NCLSampler,
+    cluster_manager,
+    sampler,
     optimizer,
     dataloader,
     max_samples,
@@ -76,12 +74,9 @@ if __name__ == "__main__":
     encoder = DenseEncoder().to(device)
     loss_fn = NCLCompatibleInfoNCELoss().to(device)
 
-    cluster_manager = ClusterManager(
-        encoder=encoder, similarity_func=calculate_cosine_similarity
-    )
-    sampler = NCLSampler(
-        cluster_manager=cluster_manager, similarity_func=calculate_cosine_similarity
-    )
+    strategy = MeanPoolingCosineSimilartyStrategy()
+    cluster_manager = ClusterManager(strategy=strategy)
+    sampler = NCLSampler(cluster_manager=cluster_manager)
 
     optimizer = optim.Adam(encoder.parameters(), lr=1e-5)
     dataset = read_doc_dataset()
