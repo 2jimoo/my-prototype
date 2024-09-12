@@ -24,7 +24,7 @@ class NCLSampler:
             x.mean_emb
             for x in self.cluster_manager.assignment_table[positive_centroid_id]
         ]
-        positive_samples = self.find_bottom_k_positive_samples(
+        positive_samples = self._find_bottom_k_positive_samples(
             anchor, k, positive_centroid_emb, positive_candidates
         )
         positive_weight = positive_centroid.get_weight(current_time)
@@ -36,7 +36,7 @@ class NCLSampler:
             x.mean_emb
             for x in self.cluster_manager.assignment_table[negative_centroid_id]
         ]
-        negative_samples = self.find_top_k_negative_samples(
+        negative_samples = self._find_top_k_negative_samples(
             anchor, k, negative_centroid_emb, negative_candidates
         )
         negative_weight = negative_centroid.get_weight(current_time)
@@ -49,7 +49,10 @@ class NCLSampler:
             negative_weights=negative_weights,
         )
 
-    def find_top_k_negative_samples(self, anchor, k, centroid, instances):
+    def _find_top_k_negative_samples(self, anchor, k, centroid, instances):
+        if len(instances) <= k:
+            return instances
+
         anchor = anchor.to(device)
         centroid = centroid.to(device)
         instances = instances.to(device)
@@ -76,7 +79,10 @@ class NCLSampler:
         )  # 유사도 값도 CPU로 변환 후 반환
         return instances[top_k_indices]
 
-    def find_bottom_k_positive_samples(self, anchor, k, centroid, instances):
+    def _find_bottom_k_positive_samples(self, anchor, k, centroid, instances):
+        if len(instances) <= k:
+            return instances
+
         anchor = anchor.to(device)
         centroid = centroid.to(device)
         instances = instances.to(device)

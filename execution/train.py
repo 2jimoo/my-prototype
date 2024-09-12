@@ -63,6 +63,15 @@ def train_model(
         print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(dataloader)}")
 
 
+def inference(encoder: DenseEncoder, cluster_manager: ClusterManager):
+
+    dummy_query = {"qid": 4, "query": "are alpha and beta glucose geometric isomers?"}
+    id, text = dummy_query["qid"], dummy_query["query"]
+    anchor_mean_embedding, anchor_token_embedding = encoder.encode(text)
+    cluster_manager.assign(id, text, anchor_mean_embedding, anchor_token_embedding)
+    cluster_manager.assign()
+
+
 if __name__ == "__main__":
     encoder = DenseEncoder().to(device)
     loss_fn = NCLCompatibleInfoNCELoss().to(device)
@@ -82,3 +91,4 @@ if __name__ == "__main__":
     train_model(
         encoder, loss_fn, cluster_manager, sampler, optimizer, dataloader, max_samples
     )
+    inference(encoder, cluster_manager)
