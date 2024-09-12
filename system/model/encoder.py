@@ -21,7 +21,9 @@ class DenseEncoder(nn.Module):
         ).to(device)
         with torch.no_grad():
             outputs = self.model(**inputs)
-        return outputs.last_hidden_state[:, 0, :]  # [CLS] 토큰만 추출
+        mean_embedding = outputs.last_hidden_state.mean(dim=1)
+        # outputs.last_hidden_state[:, 0, :]  # [CLS] 토큰만 추출
+        return mean_embedding
 
     def encode(self, text):
         inputs = self.tokenizer(
@@ -29,4 +31,7 @@ class DenseEncoder(nn.Module):
         )
         with torch.no_grad():
             outputs = self.model(**inputs)
-        return outputs.last_hidden_state
+
+        mean_embedding = outputs.last_hidden_state.mean(dim=1)
+        token_embedding = outputs.last_hidden_state.squeeze(0)
+        return mean_embedding, token_embedding

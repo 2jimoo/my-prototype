@@ -5,11 +5,20 @@ from dataclasses import dataclass
 
 
 @dataclass
+class SamplingResult:
+    positive_embeddings: List[Tensor]
+    negative_embeddings: List[Tensor]
+    positive_weights: List[float]
+    negative_weights: List[float]
+
+
+@dataclass
 class ClusterInstance:
     id: int
     passage: str
     mean_emb: Tensor
     token_embs: List[Tensor]
+    cluster_id: int
 
 
 class ActiveClusterFeatureVector:

@@ -1,41 +1,84 @@
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
-from system import DenseEncoder, InfoNCELoss, CompatibleInfoNCELoss
+from torch.utils.data import DataLoader
+from system import (
+    DenseEncoder,
+    InfoNCELoss,
+    NCLCompatibleInfoNCELoss,
+    ClusterManager,
+    NCLSampler,
+    SamplingResult,
+    read_doc_dataset,
+    calculate_cosine_similarity,
+    calculate_term,
+    calculate_term_regl,
+)
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
 
-encoder = DenseEncoder().to("cuda")
-loss_fn = InfoNCELoss().to("cuda")
-optimizer = optim.Adam(encoder.parameters(), lr=1e-5)
 
-
-# 학습 루프 예시
-def train_model(encoder, loss_fn, optimizer, data_loader, epochs=3):
+def train_model(
+    encoder: DenseEncoder,
+    loss_fn,
+    cluster_manager: ClusterManager,
+    sampler: NCLSampler,
+    optimizer,
+    dataloader,
+    max_samples,
+    epochs=3,
+):
     encoder.train()
 
     for epoch in range(epochs):
         running_loss = 0.0
 
-        for batch in data_loader:
-            texts, positives, negatives = batch  # (anchor, positive, negative)
+        for batch in dataloader:
+            id, text = batch
+            anchor_mean_embedding, anchor_token_embedding = encoder.encode(text)
 
-            # 모델 출력 (GPU로 이동)
-            anchor_enc = encoder(texts).to("cuda")[:, 0, :]  # [CLS] 토큰 사용
-            positive_enc = encoder(positives).to("cuda")[:, 0, :]
-            negative_enc = encoder(negatives).to("cuda")[:, 0, :]
+            cluster_manager.assign(
+                id, text, anchor_mean_embedding, anchor_token_embedding
+            )
+            sampling_result: SamplingResult = sampler.get_weak_samples(
+                anchor=anchor_mean_embedding, k=max_samples
+            )
 
-            # 손실 계산
-            loss = loss_fn(anchor_enc, positive_enc, negative_enc)
+            loss = loss_fn(
+                anchor=anchor_mean_embedding,
+                positives=sampling_result.positive_embeddings,
+                negatives=sampling_result.negative_embeddings,
+                positive_weights=sampling_result.positive_weights,
+                negative_weights=sampling_result.negative_weights,
+            )
 
-            # 역전파 및 옵티마이저 스텝
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
 
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(data_loader)}")
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(dataloader)}")
+
+
+if __name__ == "__main__":
+    encoder = DenseEncoder().to(device)
+    loss_fn = NCLCompatibleInfoNCELoss().to(device)
+
+    cluster_manager = ClusterManager(
+        encoder=encoder, similarity_func=calculate_cosine_similarity
+    )
+    sampler = NCLSampler(
+        cluster_manager=cluster_manager, similarity_func=calculate_cosine_similarity
+    )
+
+    optimizer = optim.Adam(encoder.parameters(), lr=1e-5)
+    dataset = read_doc_dataset()
+    dataloader = DataLoader(dataset, batch_size=4)
+
+    max_samples = 3
+    train_model(
+        encoder, loss_fn, cluster_manager, sampler, optimizer, dataloader, max_samples
+    )
