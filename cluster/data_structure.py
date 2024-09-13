@@ -2,6 +2,7 @@ from torch import Tensor
 from typing import List
 import numpy as np
 from dataclasses import dataclass
+import torch
 
 
 @dataclass
@@ -14,24 +15,25 @@ class SamplingResult:
 
 @dataclass
 class ClusterInstance:
-    id: int
-    passage: str
-    mean_emb: Tensor
-    token_embs: List[Tensor]
-    cluster_id: int
+    id: int = -1
+    passage: str = ""
+    mean_emb: Tensor = None
+    token_embs: List[Tensor] = None
 
 
 class ActiveClusterFeatureVector:
-    def __init__(self, current_time_step=None, centroid: ClusterInstance = None):
-        if centroid:
-            self.centroid_id = centroid.id
-            self.n = 1
-            self.S1 = np.zeros(centroid.mean_emb)
-            self.S2 = np.zeros(centroid.mean_emb)
-            self.prototype = centroid
-        if current_time_step:
-            self.t = current_time_step
+    def __init__(
+        self, centroid_id, current_time_step=0, centroid: ClusterInstance = None
+    ):
+        self.centroid_id = centroid_id
         self.u = 0.1
+        if centroid:
+            self.n = 1
+            self.S1 = torch.sum(centroid.mean_emb, dim=0)
+            self.S2 = torch.sum(centroid.mean_emb**2, dim=0)
+            self.prototype = centroid
+        self.t = current_time_step
+        # print(f"ActiveClusterFeatureVector __init__: {self.S2}")
 
     def update_prototype(self, prototype: ClusterInstance):
         self.prototype = prototype
@@ -49,15 +51,22 @@ class ActiveClusterFeatureVector:
         return np.exp((self.t - current_time) / self.u)
 
     def get_mean(self):
-        return self.S1 / self.n
+        # (num_sample=1, vector_size=768)로 맞춰주기 위해 unsqueeze(0)추가
+        return (self.S1 / self.n).unsqueeze(0)
 
     def get_rms(self):
-        return np.sqrt(self.S2 / self.n)
+        # TODO 이것도 norm?
+        return torch.sqrt(self.S2 / self.n)
+
+    def get_std_norm(self):
+        std = self.get_std()
+        mean_distance = torch.norm(std).item()
+        return mean_distance
 
     def get_std(self):
         mean = self.get_mean()
         variance = (self.S2 / self.n) - (mean**2)
-        std = np.sqrt(variance)
+        std = torch.sqrt(variance)
         return std
 
 
@@ -78,8 +87,13 @@ class DeactiveClusterFeatureVector:
     def get_std(self):
         mean = self.get_mean()
         variance = (self.S2 / self.n) - (mean**2)
-        std = np.sqrt(variance)
+        std = torch.sqrt(variance)
         return std
+
+    def get_std_norm(self):
+        std = self.get_std()
+        mean_distance = torch.norm(std).item()
+        return mean_distance
 
     def build_ACFV(self) -> ActiveClusterFeatureVector:
         reactivated = ActiveClusterFeatureVector()

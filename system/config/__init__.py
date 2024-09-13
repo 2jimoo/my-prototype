@@ -1,1 +1,0 @@
-from stratrgies import MeanPoolingCosineSimilartyStrategy, Strategy

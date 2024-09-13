@@ -16,8 +16,8 @@ else:
 
 class NCLSampler:
     def __init__(self, cluster_manager: ClusterManager):
-        self.cluster_manager = cluster_manager
-        self.strategy = cluster_manager.strategy
+        self.cluster_manager: ClusterManager = cluster_manager
+        self.strategy: Strategy = cluster_manager.strategy
 
     def get_weak_samples(self, anchor_mean_emb, anchor_token_embs, k) -> SamplingResult:
         x: ClusterInstance = ClusterInstance()

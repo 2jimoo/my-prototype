@@ -2,13 +2,13 @@ from functions import (
     calculate_cosine_similarity,
     calculate_term,
     calculate_term_regl,
-    faiss_search,
+    cosine_search,
     ncl_lsh,
 )
 from cluster import ClusterInstance, ActiveClusterFeatureVector
 from model import DenseEncoder
 from typing import List
-import numpy as np
+import torch
 
 
 class Strategy:
@@ -34,7 +34,6 @@ class Strategy:
         data: List[ClusterInstance],
         vector_dim=768,
     ):
-
         pass
 
     def get_distance(self, x: ClusterInstance, centroid: ActiveClusterFeatureVector):
@@ -43,14 +42,17 @@ class Strategy:
 
 class MeanPoolingCosineSimilartyStrategy(Strategy):
     def __init__(self, encoder: DenseEncoder) -> None:
-        super.__init__(self, encoder)
+        super().__init__(encoder)
 
     def get_repr_drift(self, prototype: ClusterInstance):
         E0, E_cur = (
             prototype.mean_emb,
             self.encoder.encode(prototype.passage)[0],
         )
-        return calculate_cosine_similarity(E0, E_cur)
+        # 유클리드 거리(2-norm)로 비교? 코사인으로 비교?
+        distance = torch.norm(E0 - E_cur).item()
+        # print(f'get_repr_drift distance:{distance}')
+        return distance
 
     def get_closest_cluster_indice(
         self,
@@ -60,8 +62,10 @@ class MeanPoolingCosineSimilartyStrategy(Strategy):
         vector_dim=768,
     ):
         query = query.mean_emb
-        embeddings = np.array([c.get_mean() for c in data])
-        return faiss_search(query=query, k=k, data=embeddings, vector_dim=vector_dim)
+        embeddings = [c.get_mean() for c in data]
+        return cosine_search(
+            query=query, k=k, documents=embeddings, vector_dim=vector_dim
+        )
 
     def get_closet_instance_indice(
         self,
@@ -71,11 +75,17 @@ class MeanPoolingCosineSimilartyStrategy(Strategy):
         vector_dim=768,
     ):
         query = query.get_mean()
-        embeddings = np.array([x.mean_emb for x in data])
-        return faiss_search(query=query, k=k, data=embeddings, vector_dim=vector_dim)
+        embeddings = [x.mean_emb for x in data]
+        # print(f"get_closet_instance_indice query shape: {query.shape}")
+        # print(f"get_closet_instance_indice embeddings len: {len(embeddings)}")
+        # print(f"get_closet_instance_indice embeddings shape: {embeddings[0].shape}")
+        return cosine_search(
+            query=query, k=k, documents=embeddings, vector_dim=vector_dim
+        )
 
     def get_distance(self, x: ClusterInstance, centroid: ActiveClusterFeatureVector):
-        return calculate_cosine_similarity(x.mean_emb, centroid.get_mean())
+        # calculate_cosine_similarity
+        return torch.norm(x.mean_emb, centroid.get_mean())
 
 
 class TokenEmbeddingsTermSimilartyStrategy(Strategy):
