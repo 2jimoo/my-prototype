@@ -7,13 +7,26 @@ from cluster import (
     NCLSampler,
     SamplingResult,
 )
+from functions import cosine_search
 from config import MeanPoolingCosineSimilartyStrategy
-from my_data import read_doc_dataset
+from my_data import read_doc_dataset, read_query_dataset
+from .evaluate import evaluate_dataset
+from collections import defaultdict
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
+
+
+def save_model(encoder: DenseEncoder, model_weights_path):
+    torch.save(encoder.state_dict(), model_weights_path)
+
+
+def load_model(model_weights_path):
+    model = DenseEncoder()
+    model.load_state_dict(torch.load(model_weights_path))
+    return model
 
 
 def train_model(
@@ -25,6 +38,7 @@ def train_model(
     dataloader,
     max_samples,
     init_cluster_num,
+    model_weights_path,
     epochs=3,
 ):
     encoder.train()
@@ -35,8 +49,6 @@ def train_model(
         for batch in dataloader:
             id, text = batch
             anchor_mean_embedding, anchor_token_embedding = encoder.encode(text)
-            print(f"anchor_mean_embedding shape: {anchor_mean_embedding.shape}")
-            print(f"anchor_token_embedding shape: {anchor_token_embedding.shape}")
             cluster_manager.assign(
                 x_id=id,
                 x_passage=text,
@@ -66,18 +78,35 @@ def train_model(
                 running_loss += loss.item()
 
         print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(dataloader)}")
+    save_model(encoder, model_weights_path)
 
 
-def inference(encoder: DenseEncoder, cluster_manager: ClusterManager):
+def generate_rank_file(
+    cluster_manager: ClusterManager, rank_file_path, k=3, session_t=0
+):
+    # 현재 세션의 모든 문서에서 각 query의 top-k pid rank순서대로 저장
+    encoder: DenseEncoder = save_model(encoder, model_weights_path).to(device)
+    encoder.eval()
+    test_queries = read_query_dataset()
+    all_docs = cluster_manager.instance_memory.values()
+    doc_embs = [doc.mean_emb for doc in all_docs]
+    result = defaultdict(list)
 
-    dummy_query = {"qid": 4, "query": "are alpha and beta glucose geometric isomers?"}
-    id, text = dummy_query["qid"], dummy_query["query"]
-    anchor_mean_embedding, anchor_token_embedding = encoder.encode(text)
-    cluster_manager.assign(id, text, anchor_mean_embedding, anchor_token_embedding)
+    for query in test_queries:
+        qid = query["qid"]
+        q_emb, _ = encoder.encode(query["text"])
+        indices = cosine_search(query=q_emb, k=k, documents=doc_embs)
+        doc_ids = [all_docs[idx].id for idx in indices]
+        result[qid].extend(doc_ids)
+
+    with open(rank_file_path, "w") as f:
+        for key, values in result.items():
+            line = f"{key} " + " ".join(map(str, values)) + "\n"
+            f.write(line)
 
 
 if __name__ == "__main__":
-    init_cluster_num = 2
+    init_cluster_num = 10
     encoder = DenseEncoder().to(device)
     loss_fn = NCLCompatibleInfoNCELoss().to(device)
 
@@ -92,6 +121,7 @@ if __name__ == "__main__":
     dataloader = DataLoader(dataset, batch_size=4)
 
     max_samples = 3
+    model_weights_path = "./data/model/model_weights.pth"
     train_model(
         encoder,
         loss_fn,
@@ -101,5 +131,8 @@ if __name__ == "__main__":
         dataloader,
         init_cluster_num,
         max_samples,
+        model_weights_path,
     )
-    inference(encoder, cluster_manager)
+    rank_file_path = "./data/result"
+    generate_rank_file(cluster_manager)
+    # evaluate_dataset()

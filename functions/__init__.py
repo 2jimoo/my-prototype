@@ -1,3 +1,3 @@
 from .similarities import *
-from .metrics import *
+from ..evaluate import *
 from .search import *
