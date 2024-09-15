@@ -89,7 +89,7 @@ class NCLCompatibleInfoNCELoss(nn.Module):
         # print(f"negatives size: {negatives.shape}")
 
         # Expand dimensions for broadcasting
-        anchor_expanded = anchor.unsqueeze(1)  # [1, 1, 768]
+        anchor_expanded = anchor.clone().unsqueeze(1)  # [1, 1, 768]
 
         # Ensure positives and negatives are in the shape [num_samples, embedding_dim, 1]
         positives_permuted = positives.permute(1, 2, 0)  # [1, 768, num_positives]

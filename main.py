@@ -5,6 +5,8 @@ from model import DenseEncoder, InfoNCELoss, NCLCompatibleInfoNCELoss
 from cluster import (
     ClusterManager,
     NCLSampler,
+    RandomSampler,
+    Sampler,
     SamplingResult,
 )
 from functions import cosine_search
@@ -73,13 +75,13 @@ def train_model(
                 # print_dict(cluster_manager.centroid_memory)
                 # print_dicts(cluster_manager.assignment_table)
                 sampling_result: SamplingResult = sampler.get_samples(
-                    anchor_mean_emb=anchor_mean_embedding,
-                    anchor_token_embs=anchor_token_embedding,
+                    anchor_mean_emb=anchor_mean_embedding.clone(),
+                    anchor_token_embs=anchor_token_embedding.clone(),
                     k=max_samples,
                 )
 
                 loss = loss_fn(
-                    anchor=anchor_mean_embedding,
+                    anchor=anchor_mean_embedding.clone(),
                     positives=sampling_result.positive_embeddings,
                     negatives=sampling_result.negative_embeddings,
                     positive_weights=sampling_result.positive_weights,
@@ -133,7 +135,7 @@ if __name__ == "__main__":
     cluster_manager = ClusterManager(
         strategy=strategy, init_cluster_num=init_cluster_num
     )
-    sampler = NCLSampler(cluster_manager=cluster_manager)
+    sampler = RandomSampler(cluster_manager=cluster_manager)
 
     optimizer = optim.Adam(encoder.parameters(), lr=1e-5)
     dataset = read_doc_dataset()

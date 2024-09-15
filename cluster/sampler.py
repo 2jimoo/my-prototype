@@ -36,28 +36,43 @@ class RandomSampler(Sampler):
         positive_centroid_id, negative_centroid_id = (
             self.cluster_manager.find_closest_centroid_ids(x=x, k=2)
         )
+        print(
+            f"random | positive_centroid_id:{positive_centroid_id}, negative_centroid_id:{negative_centroid_id}"
+        )
 
         positive_cand_indice = self.cluster_manager.assignment_table[
             positive_centroid_id
         ]
+        positive_cand_indice = (
+            random.sample(positive_cand_indice, k)
+            if k <= len(positive_cand_indice)
+            else positive_cand_indice
+        )
         positive_embeddings = [
             self.cluster_manager.instance_memory[idx].mean_emb.clone()
-            for idx in random.sample(positive_cand_indice, k)
+            for idx in positive_cand_indice
         ]
 
-        negative_centroid: ActiveClusterFeatureVector = (
-            self.cluster_manager.centroid_memory[negative_centroid_id]
+        negative_cand_indice = self.cluster_manager.assignment_table[
+            negative_centroid_id
+        ]
+        negative_cand_indice = (
+            random.sample(negative_cand_indice, k)
+            if k <= len(negative_cand_indice)
+            else negative_cand_indice
         )
-        negative_cand_indice = self.cluster_manager.assignment_table[negative_centroid]
         negative_embeddings = [
             self.cluster_manager.instance_memory[idx].mean_emb.clone()
-            for idx in random.sample(negative_cand_indice, k)
+            for idx in negative_cand_indice
         ]
+        print(
+            f"random | positive_cand_indice:{positive_cand_indice}, negative_cand_indice:{negative_cand_indice}"
+        )
         return SamplingResult(
             positive_embeddings=positive_embeddings,
-            positive_weights=[],
+            positive_weights=[1.0] * (len(positive_embeddings)),
             negative_embeddings=negative_embeddings,
-            negative_weights=[],
+            negative_weights=[1.0] * (len(negative_embeddings)),
         )
 
 
