@@ -10,8 +10,9 @@ from cluster import (
 from functions import cosine_search
 from config import MeanPoolingCosineSimilartyStrategy
 from my_data import read_doc_dataset, read_query_dataset
-from .evaluate import evaluate_dataset
+from evaluate import evaluate_dataset
 from collections import defaultdict
+from utils import print_dict, print_dicts
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -39,15 +40,17 @@ def train_model(
     max_samples,
     init_cluster_num,
     model_weights_path,
-    epochs=3,
+    epochs=1,
 ):
+    # for name, param in encoder.named_parameters():
+    #     print(f"Parameter: {name} - requires_grad: {param.requires_grad}")
     encoder.train()
 
     for epoch in range(epochs):
         running_loss = 0.0
 
         for batch in dataloader:
-            id, text = batch
+            id, text = int(batch["doc_id"].item()), batch["text"][0]
             anchor_mean_embedding, anchor_token_embedding = encoder.encode(text)
             cluster_manager.assign(
                 x_id=id,
@@ -55,8 +58,13 @@ def train_model(
                 mean_embedding=anchor_mean_embedding,
                 token_embedding=anchor_token_embedding,
             )
+            # print(f'anchor_mean_embedding.requires_grad: {anchor_mean_embedding.requires_grad}')
+            # print(f'anchor_token_embedding.requires_grad: {anchor_token_embedding.requires_grad}')
 
             if init_cluster_num <= len(cluster_manager.centroid_memory.keys()):
+                # print(f"init_cluster_num: {init_cluster_num}, # of cluster: {len(cluster_manager.centroid_memory.keys())}")
+                # print_dict(cluster_manager.centroid_memory)
+                # print_dicts(cluster_manager.assignment_table)
                 sampling_result: SamplingResult = sampler.get_weak_samples(
                     anchor_mean_emb=anchor_mean_embedding,
                     anchor_token_embs=anchor_token_embedding,
@@ -78,6 +86,7 @@ def train_model(
                 running_loss += loss.item()
 
         print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(dataloader)}")
+        cluster_manager.time_step += 1
     save_model(encoder, model_weights_path)
 
 
@@ -85,7 +94,8 @@ def generate_rank_file(
     cluster_manager: ClusterManager, rank_file_path, k=3, session_t=0
 ):
     # 현재 세션의 모든 문서에서 각 query의 top-k pid rank순서대로 저장
-    encoder: DenseEncoder = save_model(encoder, model_weights_path).to(device)
+    encoder: DenseEncoder = load_model(encoder, model_weights_path)
+    encoder = encoder.to(device)
     encoder.eval()
     test_queries = read_query_dataset()
     all_docs = cluster_manager.instance_memory.values()
@@ -106,7 +116,7 @@ def generate_rank_file(
 
 
 if __name__ == "__main__":
-    init_cluster_num = 10
+    init_cluster_num = 5
     encoder = DenseEncoder().to(device)
     loss_fn = NCLCompatibleInfoNCELoss().to(device)
 
@@ -118,21 +128,21 @@ if __name__ == "__main__":
 
     optimizer = optim.Adam(encoder.parameters(), lr=1e-5)
     dataset = read_doc_dataset()
-    dataloader = DataLoader(dataset, batch_size=4)
+    dataloader = DataLoader(dataset, batch_size=1)
 
     max_samples = 3
     model_weights_path = "./data/model/model_weights.pth"
     train_model(
-        encoder,
-        loss_fn,
-        cluster_manager,
-        sampler,
-        optimizer,
-        dataloader,
-        init_cluster_num,
-        max_samples,
-        model_weights_path,
+        encoder=encoder,
+        loss_fn=loss_fn,
+        cluster_manager=cluster_manager,
+        sampler=sampler,
+        optimizer=optimizer,
+        dataloader=dataloader,
+        max_samples=max_samples,
+        init_cluster_num=init_cluster_num,
+        model_weights_path=model_weights_path,
     )
     rank_file_path = "./data/result"
-    generate_rank_file(cluster_manager)
+    generate_rank_file(rank_file_path=rank_file_path, cluster_manager=cluster_manager)
     # evaluate_dataset()

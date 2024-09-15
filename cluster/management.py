@@ -6,6 +6,7 @@ from .data_structure import (
 )
 from config import Strategy
 from typing import List
+from utils import print_dicts, print_dict
 
 
 class ClusterManager:
@@ -16,7 +17,7 @@ class ClusterManager:
         self.assignment_table = defaultdict(list)  # 클러스터 id: 할당된 인스턴스 번호
         self.instance_memory = {}  # 인스턴스 id : 인스턴스 데이터
         self.centroid_memory = {}  # 클러스터 id: 클러스터 데이터
-        self.active_threshold = 0.1
+        self.active_threshold = 0.01
         self.strategy = strategy
         self.deactive_cluster_manager = DeactivedClusterManager(strategy=strategy)
 
@@ -45,12 +46,14 @@ class ClusterManager:
         for c_id in centroid_memory_keys:
             cfv: ActiveClusterFeatureVector = self.centroid_memory[c_id]
             if cfv.get_weight(self.time_step) < self.active_threshold:
+                print(f"Deactivate {c_id}")
                 prototype: ClusterInstance = self._find_prototype(cfv)
                 self.deactive_cluster_manager.update(cfv, prototype=prototype)
                 del self.centroid_memory[c_id]
         # discard
         discarded_clusters = self.deactive_cluster_manager.discard()
         for c_id in discarded_clusters:
+            print(f"Discard {c_id}")
             if c_id in self.assignment_table.keys():
                 for i_id in self.assignment_table[c_id]:
                     del self.instance_memory[i_id]
@@ -95,6 +98,9 @@ class ClusterManager:
         # TODO 초기 클러스터 어떻게 구성할지 고민 필요...
         # TODO 다 탈락하는 경우 생각 못 한 threshold가 하나 더..
         if len(self.centroid_memory.keys()) < self.init_centroid_num:
+            print(
+                f"new centroid initially {len(self.centroid_memory.keys())}/{self.init_centroid_num}"
+            )
             self._add_centroid(x, current_time_step)
         else:
             new_centroid = self.find_closest_centroid(x)
@@ -105,10 +111,13 @@ class ClusterManager:
             distance = min(new_distance, old_distance)
 
             if centroid.get_rms() < distance:
+                print("new centroid")
                 self._add_centroid(x, current_time_step)
             else:
                 if centroid.centroid_id == old_centroid.centroid_id:
+                    print("recall cluster")
                     self._recall_cluster(centroid.centroid_id)
+                print("assign x to cluster")
                 self._assign_instance(
                     x,
                     centroid.centroid_id,
@@ -118,7 +127,7 @@ class ClusterManager:
 
     def assign(self, x_id, x_passage, mean_embedding, token_embedding):
         self._assign(x_id, x_passage, mean_embedding, token_embedding, self.time_step)
-        self.time_step += 1
+        # self.time_step += 1
 
 
 class DeactivedClusterManager:

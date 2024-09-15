@@ -20,13 +20,16 @@ class ClusterInstance:
     mean_emb: Tensor = None
     token_embs: List[Tensor] = None
 
+    def __str__(self):
+        return f"ClusterInstance(id: {self.id}, passage: {self.passage[:5]})"
+
 
 class ActiveClusterFeatureVector:
     def __init__(
         self, centroid_id, current_time_step=0, centroid: ClusterInstance = None
     ):
         self.centroid_id = centroid_id
-        self.u = 0.1
+        self.u = 10
         if centroid:
             self.n = 1
             self.S1 = torch.sum(centroid.mean_emb, dim=0)
@@ -34,6 +37,9 @@ class ActiveClusterFeatureVector:
             self.prototype = centroid
         self.t = current_time_step
         # print(f"ActiveClusterFeatureVector __init__: {self.S2}")
+
+    def __str__(self):
+        return f"ActiveClusterFeatureVector(centroid_id: {self.centroid_id}, n: {self.n}, t:{self.t})"
 
     def update_prototype(self, prototype: ClusterInstance):
         self.prototype = prototype
@@ -48,15 +54,19 @@ class ActiveClusterFeatureVector:
         self.t = t
 
     def get_weight(self, current_time):
-        return np.exp((self.t - current_time) / self.u)
+        weight = np.exp((self.t - current_time) / self.u)
+        # print(f'centroid_id: {self.centroid_id} | weight: {weight}')
+        return weight
 
     def get_mean(self):
         # (num_sample=1, vector_size=768)로 맞춰주기 위해 unsqueeze(0)추가
         return (self.S1 / self.n).unsqueeze(0)
 
     def get_rms(self):
-        # TODO 이것도 norm?
-        return torch.sqrt(self.S2 / self.n)
+        # TODO 이것도 norm? torch.sqrt(self.S2 / self.n)
+        rms = torch.norm(torch.sqrt(self.S2 / self.n))
+        print(f"centroid_id: {self.centroid_id} | rms: {rms}")
+        return rms
 
     def get_std_norm(self):
         std = self.get_std()

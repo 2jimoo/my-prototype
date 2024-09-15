@@ -28,35 +28,50 @@ class NCLSampler:
             self.cluster_manager.find_closest_centroid_ids(x=x, k=2)
         )
         current_time = self.cluster_manager.time_step
+        # print(f"positive_centroid_id:{positive_centroid_id}, negative_centroid_id:{negative_centroid_id}")
 
         positive_centroid: ActiveClusterFeatureVector = (
             self.cluster_manager.centroid_memory[positive_centroid_id]
         )
-        positive_candidates = self.cluster_manager.assignment_table[
+        positive_cand_indice = self.cluster_manager.assignment_table[
             positive_centroid_id
         ]
-        positive_samples = self._find_bottom_k_positive_samples(
-            x, k, positive_centroid, positive_candidates
+        positive_sample = self._find_bottom_k_positive_samples(
+            anchor=x,
+            k=k,
+            centroid=positive_centroid,
+            instances=[
+                self.cluster_manager.instance_memory[idx]
+                for idx in positive_cand_indice
+            ],
         )
+        positive_embeddings = [x.mean_emb for x in positive_sample]
         positive_weight = positive_centroid.get_weight(current_time)
-        positive_weights = [positive_weight] * len(positive_samples)
+        positive_weights = [positive_weight] * len(positive_embeddings)
 
         negative_centroid: ActiveClusterFeatureVector = (
             self.cluster_manager.centroid_memory[negative_centroid_id]
         )
-        negative_candidates = self.cluster_manager.assignment_table[
+        negative_cand_indice = self.cluster_manager.assignment_table[
             negative_centroid_id
         ]
         negative_samples = self._find_top_k_negative_samples(
-            x, k, negative_centroid, negative_candidates
+            anchor=x,
+            k=k,
+            centroid=negative_centroid,
+            instances=[
+                self.cluster_manager.instance_memory[idx]
+                for idx in negative_cand_indice
+            ],
         )
+        negative_embeddings = [x.mean_emb for x in negative_samples]
         negative_weight = negative_centroid.get_weight(current_time)
         negative_weights = [negative_weight] * len(negative_samples)
 
         return SamplingResult(
-            positive_embeddings=positive_samples,
+            positive_embeddings=positive_embeddings,
             positive_weights=positive_weights,
-            negative_embeddings=negative_samples,
+            negative_embeddings=negative_embeddings,
             negative_weights=negative_weights,
         )
 
@@ -68,6 +83,7 @@ class NCLSampler:
         instances: List[ClusterInstance],
     ):
         if len(instances) <= k:
+            # print(f"return {instances}")
             return instances
 
         anchor = anchor.to(device)
@@ -94,6 +110,11 @@ class NCLSampler:
         top_k_similarities = (
             top_k_similarities.cpu().tolist()
         )  # 유사도 값도 CPU로 변환 후 반환
+
+        # print(f"NCLSampler._find_top_k_negative_samples result")
+        # print(f"top_k_similarities: {top_k_similarities}")
+        # print(f"top_k_indices: {top_k_indices}")
+        # print(f"instances[top_k_indices]: {instances[top_k_indices]}")
         return instances[top_k_indices]
 
     def _find_bottom_k_positive_samples(
@@ -104,6 +125,7 @@ class NCLSampler:
         instances: List[ClusterInstance],
     ):
         if len(instances) <= k:
+            # print(f"return {instances}")
             return instances
 
         anchor = anchor.to(device)
@@ -129,4 +151,9 @@ class NCLSampler:
 
         bottom_k_indices = filtered_indices[bottom_k_indices].cpu().tolist()
         bottom_k_similarities = bottom_k_similarities.cpu().tolist()
+
+        # print(f"NCLSampler._find_bottom_k_positive_samples result")
+        # print(f"bottom_k_similarities: {bottom_k_similarities}")
+        # print(f"bottom_k_indices: {bottom_k_indices}")
+        # print(f"instances[bottom_k_indices]: {instances[bottom_k_indices]}")
         return instances[bottom_k_indices]

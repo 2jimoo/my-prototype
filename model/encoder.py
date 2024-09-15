@@ -30,8 +30,8 @@ class DenseEncoder(nn.Module):
         inputs = self.tokenizer(
             text, return_tensors="pt", padding=True, truncation=True
         ).to(device)
-        with torch.no_grad():
-            outputs = self.model(**inputs)
+        # with torch.no_grad(): 멍청아...
+        outputs = self.model(**inputs)
 
         mean_embedding = outputs.last_hidden_state.mean(dim=1)
         token_embedding = outputs.last_hidden_state.squeeze(0)
