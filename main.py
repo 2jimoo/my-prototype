@@ -14,6 +14,7 @@ from evaluate import evaluate_dataset
 from collections import defaultdict
 from utils import print_dict, print_dicts
 
+torch.autograd.set_detect_anomaly(True)
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
@@ -52,6 +53,10 @@ def train_model(
         for batch in dataloader:
             id, text = int(batch["doc_id"].item()), batch["text"][0]
             anchor_mean_embedding, anchor_token_embedding = encoder.encode(text)
+            anchor_mean_embedding, anchor_token_embedding = (
+                anchor_mean_embedding.clone(),
+                anchor_token_embedding.clone(),
+            )
             cluster_manager.assign(
                 x_id=id,
                 x_passage=text,
@@ -62,10 +67,12 @@ def train_model(
             # print(f'anchor_token_embedding.requires_grad: {anchor_token_embedding.requires_grad}')
 
             if init_cluster_num <= len(cluster_manager.centroid_memory.keys()):
-                # print(f"init_cluster_num: {init_cluster_num}, # of cluster: {len(cluster_manager.centroid_memory.keys())}")
+                print(
+                    f"init_cluster_num: {init_cluster_num}, # of cluster: {len(cluster_manager.centroid_memory.keys())}"
+                )
                 # print_dict(cluster_manager.centroid_memory)
                 # print_dicts(cluster_manager.assignment_table)
-                sampling_result: SamplingResult = sampler.get_weak_samples(
+                sampling_result: SamplingResult = sampler.get_samples(
                     anchor_mean_emb=anchor_mean_embedding,
                     anchor_token_embs=anchor_token_embedding,
                     k=max_samples,
@@ -97,17 +104,19 @@ def generate_rank_file(
     encoder: DenseEncoder = load_model(encoder, model_weights_path)
     encoder = encoder.to(device)
     encoder.eval()
+
     test_queries = read_query_dataset()
     all_docs = cluster_manager.instance_memory.values()
     doc_embs = [doc.mean_emb for doc in all_docs]
     result = defaultdict(list)
 
-    for query in test_queries:
-        qid = query["qid"]
-        q_emb, _ = encoder.encode(query["text"])
-        indices = cosine_search(query=q_emb, k=k, documents=doc_embs)
-        doc_ids = [all_docs[idx].id for idx in indices]
-        result[qid].extend(doc_ids)
+    with torch.no_grad():
+        for query in test_queries:
+            qid = query["qid"]
+            q_emb, _ = encoder.encode(query["text"])
+            indices = cosine_search(query=q_emb, k=k, documents=doc_embs)
+            doc_ids = [all_docs[idx].id for idx in indices]
+            result[qid].extend(doc_ids)
 
     with open(rank_file_path, "w") as f:
         for key, values in result.items():

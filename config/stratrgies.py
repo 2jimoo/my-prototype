@@ -1,14 +1,14 @@
 from functions import (
-    calculate_cosine_similarity,
     calculate_term,
     calculate_term_regl,
     cosine_search,
-    ncl_lsh,
 )
 from cluster import ClusterInstance, ActiveClusterFeatureVector
 from model import DenseEncoder
 from typing import List
 import torch
+
+torch.autograd.set_detect_anomaly(True)
 
 
 class Strategy:
@@ -46,8 +46,8 @@ class MeanPoolingCosineSimilartyStrategy(Strategy):
 
     def get_repr_drift(self, prototype: ClusterInstance):
         E0, E_cur = (
-            prototype.mean_emb,
-            self.encoder.encode(prototype.passage)[0],
+            prototype.mean_emb.clone(),
+            self.encoder.encode(prototype.passage)[0].clone(),
         )
         # 유클리드 거리(2-norm)로 비교? 코사인으로 비교?
         distance = torch.norm(E0 - E_cur).item()
@@ -61,7 +61,7 @@ class MeanPoolingCosineSimilartyStrategy(Strategy):
         data: List[ActiveClusterFeatureVector],
         vector_dim=768,
     ):
-        query = query.mean_emb
+        query = query.mean_emb.clone()
         embeddings = [c.get_mean() for c in data]
         return cosine_search(
             query=query, k=k, documents=embeddings, vector_dim=vector_dim
@@ -75,7 +75,7 @@ class MeanPoolingCosineSimilartyStrategy(Strategy):
         vector_dim=768,
     ):
         query = query.get_mean()
-        embeddings = [x.mean_emb for x in data]
+        embeddings = [x.mean_emb.clone() for x in data]
         # print(f"get_closet_instance_indice query shape: {query.shape}")
         # print(f"get_closet_instance_indice embeddings len: {len(embeddings)}")
         # print(f"get_closet_instance_indice embeddings shape: {embeddings[0].shape}")
@@ -85,7 +85,8 @@ class MeanPoolingCosineSimilartyStrategy(Strategy):
 
     def get_distance(self, x: ClusterInstance, centroid: ActiveClusterFeatureVector):
         # calculate_cosine_similarity
-        return torch.norm(x.mean_emb, centroid.get_mean())
+        # print(f"get_distance | x: {x.mean_emb.shape}, centoid centor vector:{centroid.get_mean().shape}")
+        return torch.norm(x.mean_emb.clone() - centroid.get_mean())
 
 
 class TokenEmbeddingsTermSimilartyStrategy(Strategy):

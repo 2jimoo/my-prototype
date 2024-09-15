@@ -7,22 +7,69 @@ from cluster import (
 )
 from config import Strategy
 from typing import List
+import random
 
+torch.autograd.set_detect_anomaly(True)
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
 
 
-class NCLSampler:
+class Sampler:
+    def __init__(self, cluster_manager: ClusterManager):
+        self.cluster_manager: ClusterManager = cluster_manager
+
+    def get_samples(self, anchor_mean_emb, anchor_token_embs, k) -> SamplingResult:
+        pass
+
+
+class RandomSampler(Sampler):
+    def __init__(self, cluster_manager: ClusterManager):
+        super().__init__(cluster_manager)
+
+    def get_samples(self, anchor_mean_emb, anchor_token_embs, k) -> SamplingResult:
+        x: ClusterInstance = ClusterInstance()
+        x.mean_emb = anchor_mean_emb.clone()
+        x.token_embs = anchor_token_embs.clone()
+
+        positive_centroid_id, negative_centroid_id = (
+            self.cluster_manager.find_closest_centroid_ids(x=x, k=2)
+        )
+
+        positive_cand_indice = self.cluster_manager.assignment_table[
+            positive_centroid_id
+        ]
+        positive_embeddings = [
+            self.cluster_manager.instance_memory[idx].mean_emb.clone()
+            for idx in random.sample(positive_cand_indice, k)
+        ]
+
+        negative_centroid: ActiveClusterFeatureVector = (
+            self.cluster_manager.centroid_memory[negative_centroid_id]
+        )
+        negative_cand_indice = self.cluster_manager.assignment_table[negative_centroid]
+        negative_embeddings = [
+            self.cluster_manager.instance_memory[idx].mean_emb.clone()
+            for idx in random.sample(negative_cand_indice, k)
+        ]
+        return SamplingResult(
+            positive_embeddings=positive_embeddings,
+            positive_weights=[],
+            negative_embeddings=negative_embeddings,
+            negative_weights=[],
+        )
+
+
+class NCLSampler(Sampler):
     def __init__(self, cluster_manager: ClusterManager):
         self.cluster_manager: ClusterManager = cluster_manager
         self.strategy: Strategy = cluster_manager.strategy
 
-    def get_weak_samples(self, anchor_mean_emb, anchor_token_embs, k) -> SamplingResult:
+    def get_samples(self, anchor_mean_emb, anchor_token_embs, k) -> SamplingResult:
         x: ClusterInstance = ClusterInstance()
-        x.mean_emb = anchor_mean_emb
-        x.token_embs = anchor_token_embs
+        x.mean_emb = anchor_mean_emb.clone()
+        x.token_embs = anchor_token_embs.clone()
 
         positive_centroid_id, negative_centroid_id = (
             self.cluster_manager.find_closest_centroid_ids(x=x, k=2)
@@ -45,7 +92,7 @@ class NCLSampler:
                 for idx in positive_cand_indice
             ],
         )
-        positive_embeddings = [x.mean_emb for x in positive_sample]
+        positive_embeddings = [x.mean_emb.clone() for x in positive_sample]
         positive_weight = positive_centroid.get_weight(current_time)
         positive_weights = [positive_weight] * len(positive_embeddings)
 
@@ -64,7 +111,7 @@ class NCLSampler:
                 for idx in negative_cand_indice
             ],
         )
-        negative_embeddings = [x.mean_emb for x in negative_samples]
+        negative_embeddings = [x.mean_emb.clone() for x in negative_samples]
         negative_weight = negative_centroid.get_weight(current_time)
         negative_weights = [negative_weight] * len(negative_samples)
 

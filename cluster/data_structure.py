@@ -5,6 +5,9 @@ from dataclasses import dataclass
 import torch
 
 
+torch.autograd.set_detect_anomaly(True)
+
+
 @dataclass
 class SamplingResult:
     positive_embeddings: List[Tensor]
@@ -32,8 +35,8 @@ class ActiveClusterFeatureVector:
         self.u = 10
         if centroid:
             self.n = 1
-            self.S1 = torch.sum(centroid.mean_emb, dim=0)
-            self.S2 = torch.sum(centroid.mean_emb**2, dim=0)
+            self.S1: Tensor = torch.sum(centroid.mean_emb, dim=0)
+            self.S2: Tensor = torch.sum(centroid.mean_emb**2, dim=0)
             self.prototype = centroid
         self.t = current_time_step
         # print(f"ActiveClusterFeatureVector __init__: {self.S2}")
@@ -47,10 +50,10 @@ class ActiveClusterFeatureVector:
     def get_centroid_id(self):
         return self.centroid_id
 
-    def update(self, embedding, t):
+    def update(self, embedding: Tensor, t):
         self.n += 1
-        self.S1 += embedding
-        self.S2 += embedding**2
+        self.S1 = self.S1.clone() + torch.mean(embedding, dim=0)
+        self.S2 = self.S2.clone() + torch.mean(embedding**2, dim=0)
         self.t = t
 
     def get_weight(self, current_time):
@@ -81,11 +84,13 @@ class ActiveClusterFeatureVector:
 
 
 class DeactiveClusterFeatureVector:
-    def __init__(self, centroid_id, n, S1, S2, prototype: ClusterInstance):
+    def __init__(
+        self, centroid_id, n, S1: Tensor, S2: Tensor, prototype: ClusterInstance
+    ):
         self.centroid_id = centroid_id
         self.n = n
-        self.S1 = S1
-        self.S2 = S2
+        self.S1 = S1.clone()
+        self.S2 = S2.clone()
         self.prototype = prototype
 
     def get_centroid_id(self):
@@ -109,8 +114,8 @@ class DeactiveClusterFeatureVector:
         reactivated = ActiveClusterFeatureVector()
         reactivated.centroid_id = self.centroid_id
         reactivated.n = self.n
-        reactivated.S1 = self.S1
-        reactivated.S2 = self.S2
+        reactivated.S1 = self.S1.clone()
+        reactivated.S2 = self.S2.clone()
         reactivated.t = self.t
         reactivated.prototype = self.prototype
         return reactivated

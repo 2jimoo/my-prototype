@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 
+torch.autograd.set_detect_anomaly(True)
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:

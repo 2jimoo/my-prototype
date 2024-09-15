@@ -2,7 +2,9 @@ from collections import defaultdict
 import json
 from typing import List
 from my_data import read_query_dataset
+import torch
 
+torch.autograd.set_detect_anomaly(True)
 """
 MRR (Mean Reciprocal Rank)
 - 각 쿼리마다 정답 문서가 처음 등장하는 순위를 계산하고, 그 역수를 구해 누적합니다. 

@@ -7,6 +7,10 @@ from .data_structure import (
 from config import Strategy
 from typing import List
 from utils import print_dicts, print_dict
+import torch
+from torch import Tensor
+
+torch.autograd.set_detect_anomaly(True)
 
 
 class ClusterManager:
@@ -84,7 +88,7 @@ class ClusterManager:
     ):
         self.assignment_table[centroid_id].append(x.id)
         centroid: ActiveClusterFeatureVector = self.centroid_memory[centroid_id]
-        centroid.update(x.mean_emb, current_time_step)
+        centroid.update(x.mean_emb.clone(), current_time_step)
         if is_prototype_updated:
             prototype = self._find_prototype(self.centroid_memory[centroid_id])
             centroid.update_prototype(prototype)
@@ -92,7 +96,7 @@ class ClusterManager:
     def _assign(self, x_id, x_passage, x_mean_emb, x_token_embs, current_time_step):
         self._evict_cluster()
 
-        x = ClusterInstance(x_id, x_passage, x_mean_emb, x_token_embs)
+        x = ClusterInstance(x_id, x_passage, x_mean_emb.clone(), x_token_embs)
         self.instance_memory[x.id] = x
 
         # TODO 초기 클러스터 어떻게 구성할지 고민 필요...
@@ -104,17 +108,23 @@ class ClusterManager:
             self._add_centroid(x, current_time_step)
         else:
             new_centroid = self.find_closest_centroid(x)
-            old_centroid = self.deactive_cluster_manager.find_closest_centroid(x)
             new_distance = self.strategy.get_distance(x, new_centroid)
-            old_distance = self.strategy.get_distance(x, old_centroid)
-            centroid = new_centroid if new_distance < old_distance else old_centroid
-            distance = min(new_distance, old_distance)
+            # old가 아직 없을 수 있음
+            old_centroid = None
+            if len(self.deactive_cluster_manager.centroid_memory.keys()):
+                old_centroid = self.deactive_cluster_manager.find_closest_centroid(x)
+                old_distance = self.strategy.get_distance(x, old_centroid)
+                centroid = new_centroid if new_distance < old_distance else old_centroid
+                distance = min(new_distance, old_distance)
+            else:
+                centroid = new_centroid
+                distance = new_distance
 
             if centroid.get_rms() < distance:
                 print("new centroid")
                 self._add_centroid(x, current_time_step)
             else:
-                if centroid.centroid_id == old_centroid.centroid_id:
+                if old_centroid and centroid.centroid_id == old_centroid.centroid_id:
                     print("recall cluster")
                     self._recall_cluster(centroid.centroid_id)
                 print("assign x to cluster")
@@ -125,7 +135,7 @@ class ClusterManager:
                     centroid.get_std_norm() > distance,  # get_std()
                 )
 
-    def assign(self, x_id, x_passage, mean_embedding, token_embedding):
+    def assign(self, x_id, x_passage, mean_embedding: Tensor, token_embedding: Tensor):
         self._assign(x_id, x_passage, mean_embedding, token_embedding, self.time_step)
         # self.time_step += 1
 

@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch import Tensor
 from typing import List
 
+
+torch.autograd.set_detect_anomaly(True)
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
@@ -58,15 +60,9 @@ class NCLCompatibleInfoNCELoss(nn.Module):
         positive_weights: List[float],
         negative_weights: List[float],
     ):
-        # print("forward에 입력 텐서가 모두 require_grad=True여야 한답디다^^..")
-        # print(anchor.requires_grad)
-        # for tensor in positives:
-        #     print(tensor.requires_grad)
-        # for tensor in negatives:
-        #     print(tensor.requires_grad)
-
         # Ensure all tensors are on the same device
         device = anchor.device
+
         # Convert weights from lists to tensors and move to device
         positive_weights = torch.tensor(
             positive_weights, device=device, dtype=torch.float32
@@ -76,6 +72,8 @@ class NCLCompatibleInfoNCELoss(nn.Module):
         )
 
         # Normalize the anchor, positives, and negatives
+        # print(f'# of positives :{len(positives)}')
+        # print(f'# of negatives :{len(negatives)}')
         anchor = F.normalize(anchor, p=2, dim=-1)
         positives = torch.stack(
             [F.normalize(tensor, p=2, dim=-1) for tensor in positives], dim=0
@@ -85,27 +83,41 @@ class NCLCompatibleInfoNCELoss(nn.Module):
         ).to(device)
 
         # Compute similarities for old positives and negatives
-        pos_sim_old = torch.bmm(
-            anchor.unsqueeze(1), positives.permute(0, 2, 1)
-        ).squeeze(1)
-        neg_sim_old = torch.bmm(
-            anchor.unsqueeze(1), negatives.permute(0, 2, 1)
-        ).squeeze(1)
+        # print(f"NCLCompatibleInfoNCELoss.forward")
+        # print(f"anchor size: {anchor.shape}")
+        # print(f"positives size: {positives.shape}")
+        # print(f"negatives size: {negatives.shape}")
+
+        # Expand dimensions for broadcasting
+        anchor_expanded = anchor.unsqueeze(1)  # [1, 1, 768]
+
+        # Ensure positives and negatives are in the shape [num_samples, embedding_dim, 1]
+        positives_permuted = positives.permute(1, 2, 0)  # [1, 768, num_positives]
+        negatives_permuted = negatives.permute(1, 2, 0)  # [1, 768, num_negatives]
+
+        # Compute similarity scores
+        pos_sim = torch.bmm(
+            anchor_expanded, positives_permuted
+        )  # [1, 1, num_positives]
+        neg_sim = torch.bmm(
+            anchor_expanded, negatives_permuted
+        )  # [1, 1, num_negatives]
+
+        # Squeeze to remove the singleton dimension
+        pos_sim = pos_sim.squeeze(1)  # [1, num_positives]
+        neg_sim = neg_sim.squeeze(1)  # [1, num_negatives]
 
         # Apply weights to similarities
-        weighted_pos_sim = pos_sim_old * positive_weights
-        weighted_neg_sim = neg_sim_old * negative_weights
+        weighted_pos_sim = pos_sim * positive_weights  # [1, num_positives]
+        weighted_neg_sim = neg_sim * negative_weights  # [1, num_negatives]
 
         # Concatenate positive and negative similarities
-        pos_sim = torch.cat([weighted_pos_sim], dim=-1)
-        neg_sim = torch.cat([weighted_neg_sim], dim=-1)
-
-        # Calculate logits and loss
-        logits = torch.cat([pos_sim, neg_sim], dim=-1) / self.temperature
-        labels = torch.zeros(anchor.size(0), dtype=torch.long, device=device)
+        logits = (
+            torch.cat([weighted_pos_sim, weighted_neg_sim], dim=-1) / self.temperature
+        )
+        labels = torch.zeros(anchor.size(0), dtype=torch.long, device=device)  # [1]
 
         # Calculate cross-entropy loss
         loss = F.cross_entropy(logits, labels)
-        # print(f"loss type: {type(loss)}")
-        # print(f"loss.requires_grad: {loss.requires_grad}")
+
         return loss
