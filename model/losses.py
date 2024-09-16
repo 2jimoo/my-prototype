@@ -18,13 +18,26 @@ class InfoNCELoss(nn.Module):
         self.temperature = temperature
         self.cosine_similarity = nn.CosineSimilarity(dim=-1)
 
-    def forward(self, anchor: Tensor, positive: List[Tensor], negative: List[Tensor]):
-        pos_sim = self.cosine_similarity(anchor, positive) / self.temperature
-        neg_sim = self.cosine_similarity(anchor, negative) / self.temperature
+    def forward(self, anchor: Tensor, positives: List[Tensor], negatives: List[Tensor]):
+        anchor = F.normalize(anchor, p=2, dim=-1)
+        positives = [F.normalize(p, p=2, dim=-1) for p in positives]
+        negatives = [F.normalize(n, p=2, dim=-1) for n in negatives]
 
-        logits = torch.cat([pos_sim.unsqueeze(1), neg_sim.unsqueeze(1)], dim=1)
-        labels = torch.zeros(logits.size(0), dtype=torch.long).to(logits.device)
-        loss = nn.CrossEntropyLoss()(logits, labels)
+        positive_similarities = [torch.mm(anchor, p.T) for p in positives]
+        negative_similarities = [torch.mm(anchor, n.T) for n in negatives]
+        all_similarities = torch.cat(
+            positive_similarities + negative_similarities, dim=1
+        )
+
+        positive_indices = torch.arange(len(positives)).unsqueeze(1)
+        positive_indices = positive_indices.repeat(anchor.size(0), 1).to(anchor.device)
+
+        num_positives = len(positives)
+        batch_size = anchor.size(0)
+        positive_indices = torch.arange(batch_size) % num_positives
+        target_indices = torch.arange(batch_size).to(anchor.device)
+
+        loss = F.cross_entropy(all_similarities / self.temperature, target_indices)
         return loss
 
 
@@ -89,7 +102,7 @@ class NCLCompatibleInfoNCELoss(nn.Module):
         # print(f"negatives size: {negatives.shape}")
 
         # Expand dimensions for broadcasting
-        anchor_expanded = anchor.clone().unsqueeze(1)  # [1, 1, 768]
+        anchor_expanded = anchor.unsqueeze(1)  # [1, 1, 768]
 
         # Ensure positives and negatives are in the shape [num_samples, embedding_dim, 1]
         positives_permuted = positives.permute(1, 2, 0)  # [1, 768, num_positives]

@@ -1,7 +1,6 @@
 def print_dicts(dict):
-    for key, values in dict.items():
-        line = f"{key}: " + " ".join(map(str, values)) + "\n"
-        print(line)
+    for key, value in dict.items():
+        print(f"{key}: {value}. {type(key)}: {type(value)}")
 
 
 def print_dict(dict):

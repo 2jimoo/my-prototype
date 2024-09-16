@@ -15,9 +15,9 @@ torch.autograd.set_detect_anomaly(True)
 
 class ClusterManager:
     def __init__(self, strategy: Strategy, init_cluster_num):
-        self.time_step = 0
-        self.init_centroid_num = init_cluster_num
-        self.centroid_id = 0
+        self.time_step: int = 0
+        self.init_centroid_num: int = init_cluster_num
+        self.centroid_id: int = 0
         self.assignment_table = defaultdict(list)  # 클러스터 id: 할당된 인스턴스 번호
         self.instance_memory = {}  # 인스턴스 id : 인스턴스 데이터
         self.centroid_memory = {}  # 클러스터 id: 클러스터 데이터
@@ -37,8 +37,8 @@ class ClusterManager:
 
     def _find_prototype(self, cfv: ActiveClusterFeatureVector) -> ClusterInstance:
         instances = [
-            self.instance_memory[x_id]
-            for x_id in self.assignment_table[cfv.centroid_id]
+            self.instance_memory[int(x_id)]
+            for x_id in self.assignment_table[int(cfv.centroid_id)]
         ]
         I = self.strategy.get_closet_instance_indice(query=cfv, k=1, data=instances)[0]
         # print(f'manager _find_prototype I:{I}')
@@ -59,24 +59,25 @@ class ClusterManager:
         for c_id in discarded_clusters:
             print(f"Discard {c_id}")
             if c_id in self.assignment_table.keys():
-                for i_id in self.assignment_table[c_id]:
-                    del self.instance_memory[i_id]
-                del self.assignment_table[c_id]
+                for i_id in self.assignment_table[int(c_id)]:
+                    del self.instance_memory[int(i_id)]
+                del self.assignment_table[int(c_id)]
             if c_id in self.centroid_memory.keys():
-                del self.centroid_memory[c_id]
+                del self.centroid_memory[int(c_id)]
 
     def _recall_cluster(self, centroid_id):
         # TODO 도착시간을 갱신시켜야할까..?
         reactivated_centroid = self.deactive_cluster_manager.reactivate(centroid_id)
-        self.centroid_memory[centroid_id] = reactivated_centroid
+        self.centroid_memory[int(centroid_id)] = reactivated_centroid
 
     def _add_centroid(self, x: ClusterInstance, current_time_step):
-        self.centroid_memory[self.centroid_id] = ActiveClusterFeatureVector(
-            centroid_id=self.centroid_id,
+        new_id = int(self.centroid_id)
+        self.centroid_memory[new_id] = self.strategy.build_ActiveClusterFeatureVector(
+            centroid_id=new_id,
             centroid=x,
             current_time_step=current_time_step,
         )
-        self.assignment_table[self.centroid_id].append(x.id)
+        self.assignment_table[new_id].append(int(x.id))
         self.centroid_id += 1
 
     def _assign_instance(
@@ -86,18 +87,18 @@ class ClusterManager:
         current_time_step,
         is_prototype_updated: bool,
     ):
-        self.assignment_table[centroid_id].append(x.id)
-        centroid: ActiveClusterFeatureVector = self.centroid_memory[centroid_id]
-        centroid.update(x.mean_emb.clone(), current_time_step)
+        self.assignment_table[centroid_id].append(int(x.id))
+        centroid: ActiveClusterFeatureVector = self.centroid_memory[int(centroid_id)]
+        centroid.update(x, current_time_step)
         if is_prototype_updated:
-            prototype = self._find_prototype(self.centroid_memory[centroid_id])
+            prototype = self._find_prototype(self.centroid_memory[int(centroid_id)])
             centroid.update_prototype(prototype)
 
     def _assign(self, x_id, x_passage, x_mean_emb, x_token_embs, current_time_step):
         self._evict_cluster()
 
-        x = ClusterInstance(x_id, x_passage, x_mean_emb.clone(), x_token_embs)
-        self.instance_memory[x.id] = x
+        x = ClusterInstance(x_id, x_passage, x_mean_emb, x_token_embs)
+        self.instance_memory[int(x.id)] = x
 
         # TODO 초기 클러스터 어떻게 구성할지 고민 필요...
         # TODO 다 탈락하는 경우 생각 못 한 threshold가 하나 더..
@@ -120,10 +121,7 @@ class ClusterManager:
                 centroid = new_centroid
                 distance = new_distance
 
-            if centroid.get_rms() < distance:
-                print("new centroid")
-                self._add_centroid(x, current_time_step)
-            else:
+            if self.strategy.is_assigned(centroid, distance):
                 if old_centroid and centroid.centroid_id == old_centroid.centroid_id:
                     print("recall cluster")
                     self._recall_cluster(centroid.centroid_id)
@@ -134,6 +132,9 @@ class ClusterManager:
                     current_time_step,
                     centroid.get_std_norm() > distance,  # get_std()
                 )
+            else:
+                print(f"new centroid | distance: {distance}")
+                self._add_centroid(x, current_time_step)
 
     def assign(self, x_id, x_passage, mean_embedding: Tensor, token_embedding: Tensor):
         self._assign(x_id, x_passage, mean_embedding, token_embedding, self.time_step)
@@ -146,12 +147,13 @@ class DeactivedClusterManager:
         self.centroid_memory = {}
 
     def update(self, cfv: ActiveClusterFeatureVector, prototype: ClusterInstance):
-        deactivated = DeactiveClusterFeatureVector(
+        deactivated = self.strategy.build_DeactiveClusterFeatureVector(
             centroid_id=cfv.centroid_id,
             n=cfv.n,
-            S1=cfv.S1,
-            S2=cfv.S2,
+            V1=cfv.V1,
+            V2=cfv.V2,
             prototype=prototype,
+            t=cfv.t,
         )
         self.centroid_memory[deactivated.centroid_id] = deactivated
 
@@ -165,11 +167,11 @@ class DeactivedClusterManager:
         discarded_clusters = []
         centroid_memory_keys = list(self.centroid_memory.keys())
         for c_id in centroid_memory_keys:
-            _discarded: DeactiveClusterFeatureVector = self.centroid_memory[c_id]
+            _discarded: DeactiveClusterFeatureVector = self.centroid_memory[int(c_id)]
             prototype: ClusterInstance = _discarded.prototype
-            if _discarded.get_std_norm() <= self.strategy.get_repr_drift(prototype):
-                discarded_clusters.append(c_id)
-                del self.centroid_memory[c_id]
+            if self.strategy.is_repr_drifted(_discarded, prototype):
+                discarded_clusters.append(int(c_id))
+                del self.centroid_memory[int(c_id)]
         return discarded_clusters
 
     def reactivate(self, centroid_id) -> ActiveClusterFeatureVector:

@@ -23,7 +23,7 @@ class DenseEncoder(nn.Module):
         ).to(device)
         outputs = self.model(**inputs)
         # .squeeze(0) (batch_size, hidden_size)에서 배치 사이즈(1)없애기
-        hidden_states = outputs.last_hidden_state.clone()
+        hidden_states = outputs.last_hidden_state
         mean_embedding = hidden_states.mean(dim=1)
         # outputs.last_hidden_state[:, 0, :]  # [CLS] 토큰만 추출
         return mean_embedding
@@ -33,7 +33,7 @@ class DenseEncoder(nn.Module):
             text, return_tensors="pt", padding=True, truncation=True
         ).to(device)
         outputs = self.model(**inputs)
-        hidden_states = outputs.last_hidden_state.clone()
+        hidden_states = outputs.last_hidden_state
         mean_embedding = hidden_states.mean(dim=1)
         token_embedding = hidden_states.squeeze(0)
         return mean_embedding, token_embedding

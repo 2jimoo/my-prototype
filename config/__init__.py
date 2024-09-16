@@ -1,1 +1,6 @@
-from .stratrgies import MeanPoolingCosineSimilartyStrategy, Strategy
+from .stratrgies import (
+    MeanPoolingCosineSimilartyStrategy,
+    Strategy,
+    TokenEmbeddingsTermSimilartyStrategy,
+    TokenEmbeddingsTermReglSimilartyStrategy,
+)
