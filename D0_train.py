@@ -9,7 +9,7 @@ from cluster import (
     Sampler,
     SamplingResult,
 )
-from functions import cosine_search, term_search
+from functions import cosine_search, term_search, term_regl_search
 from config import (
     MeanPoolingCosineSimilartyStrategy,
     TokenEmbeddingsTermSimilartyStrategy,
@@ -18,7 +18,7 @@ from config import (
 from my_data import read_doc_dataset, read_query_dataset
 from evaluate import evaluate_dataset
 from collections import defaultdict
-from utils import print_dict, print_dicts
+from utils import print_assignment
 import time
 
 torch.autograd.set_detect_anomaly(True)
@@ -100,8 +100,13 @@ def train_model(
     save_model(encoder, model_weights_path)
 
 
+# TODO improve
 def generate_rank_file(
-    model_weights_path, rank_file_path, cluster_manager: ClusterManager, k=3
+    model_weights_path,
+    rank_file_path,
+    cluster_manager: ClusterManager,
+    k=3,
+    search_method="cosine",
 ):
     # 현재 세션의 모든 문서에서 각 query의 top-k pid rank순서대로 저장
     encoder: DenseEncoder = load_model(model_weights_path)
@@ -111,17 +116,24 @@ def generate_rank_file(
     test_queries = read_query_dataset()
     # cluster_manager의 값을 저장해놓거나 외부 저장소를 사용할 수 있으면 좋을 듯 이것 때매 첨부터 실행해야함ㅠ
     all_docs = list(cluster_manager.instance_memory.values())
-    doc_embs = [doc.mean_emb for doc in all_docs]
+    doc_embs = (
+        [doc.mean_emb for doc in all_docs]
+        if search_method == "cosine"
+        else [doc.token_embs for doc in all_docs]
+    )
     result = defaultdict(list)
 
     with torch.no_grad():
         for query in test_queries:
             # print(f"test query:{query}")
             qid = query["qid"]
-            q_emb, _ = encoder.encode(query["query"])
-            indices = cluster_manager.strategy.get_search_func()(
-                query=q_emb, k=k, documents=doc_embs
-            )
+            q_mean_emb, q_token_embs = encoder.encode(query["query"])
+            if search_method == "cosine":
+                indices = cosine_search(query=q_mean_emb, k=k, documents=doc_embs)
+            elif search_method == "term":
+                indices = term_search(query=q_token_embs, k=k, documents=doc_embs)
+            else:
+                indices = term_regl_search(query=q_token_embs, k=k, documents=doc_embs)
             doc_ids = [all_docs[idx].id for idx in indices]
             result[qid].extend(doc_ids)
 
@@ -136,9 +148,10 @@ if __name__ == "__main__":
     encoder = DenseEncoder().to(device)
     loss_fn = InfoNCELoss().to(device)  # NCLCompatibleInfoNCELoss().to(device)
 
-    strategy = TokenEmbeddingsTermSimilartyStrategy(
-        encoder=encoder
-    )  # TokenEmbeddingsTermReglSimilartyStrategy(encoder=encoder) ##MeanPoolingCosineSimilartyStrategy(encoder=encoder)
+    strategy = TokenEmbeddingsTermReglSimilartyStrategy(encoder=encoder)
+    # TokenEmbeddingsTermSimilartyStrategy
+    # MeanPoolingCosineSimilartyStrategy(encoder=encoder)
+    # TokenEmbeddingsTermReglSimilartyStrategy
     cluster_manager = ClusterManager(
         strategy=strategy, init_cluster_num=init_cluster_num
     )
@@ -167,19 +180,19 @@ if __name__ == "__main__":
     )
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"training elapsed_time: {elapsed_time:.3f}sec")
+    print(f"training elapsed_time: {elapsed_time:.3f} sec")
 
-    # rank_file_path="./data/result/ncl_sampling_ncl_loss.txt"
     # rank_file_path="./data/result/random_sampling_infonce_loss.txt"
-    # rank_file_path="./data/result/ncl_sampling_infonce_loss.txt"
+    rank_file_path = "./data/result/ncl_sampling_infonce_loss.txt"
     # rank_file_path = "./data/result/random_sampling_ncl_loss_.txt"
-    # rank_file_path = "./data/result/random_sampling_nceinfo_loss_termregl.txt"
-    # rank_file_path = "./data/result/ncl_sampling_nceinfo_loss_term.txt"
-    # rank_file_path = "./data/result/ncl_sampling_nceinfo_loss_termregl.txt"
-    rank_file_path = "./data/result/random_sampling_nceinfo_loss_term_termCFV.txt"
+    # rank_file_path = "./data/result/random_sampling_nceinfo_loss_term.txt"
+    # rank_file_path = "./data/result/random_sampling_nceinfo_loss_term_regl.txt"
     generate_rank_file(
         model_weights_path=model_weights_path,
         rank_file_path=rank_file_path,
         cluster_manager=cluster_manager,
+        k=3,
+        search_method="term",  # "cosine" #"term-regl"
     )
-    evaluate_dataset(k=3, rankings_path=rank_file_path)
+    evaluate_dataset(k=5, rankings_path=rank_file_path)
+    # print_assignment(cluster_manager)

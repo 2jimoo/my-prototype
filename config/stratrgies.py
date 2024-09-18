@@ -12,6 +12,8 @@ from cluster import (
     MeanDeactiveClusterFeatureVector,
     TokenEmbsActiveClusterFeatureVector,
     TokenEmbsDeactiveClusterFeatureVector,
+    TokenEmbsReglActiveClusterFeatureVector,
+    TokenEmbsReglDeactiveClusterFeatureVector,
 )
 from cluster import ClusterInstance, ActiveClusterFeatureVector
 from model import DenseEncoder
@@ -301,7 +303,7 @@ class TokenEmbeddingsTermReglSimilartyStrategy(Strategy):
     def build_ActiveClusterFeatureVector(
         self, centroid_id, centroid: ClusterInstance, current_time_step
     ):
-        return TokenEmbsActiveClusterFeatureVector(
+        return TokenEmbsReglActiveClusterFeatureVector(
             centroid_id=centroid_id,
             current_time_step=current_time_step,
             centroid=centroid,
@@ -310,6 +312,6 @@ class TokenEmbeddingsTermReglSimilartyStrategy(Strategy):
     def build_DeactiveClusterFeatureVector(
         self, centroid_id, n, V1, V2, prototype: ClusterInstance, t
     ):
-        return TokenEmbsDeactiveClusterFeatureVector(
+        return TokenEmbsReglDeactiveClusterFeatureVector(
             centroid_id, n, V1, V2, prototype, t
         )

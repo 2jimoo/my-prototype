@@ -139,6 +139,7 @@ def dummy_generator():
     D0_docs = []
     D0_queries = []
     OFFSET = 0
+    sampled_doc_ids = set()
     for domain in [domain_a, domain_b]:
         sampled_queries = queries_data[domain][:25]
 
@@ -150,9 +151,13 @@ def dummy_generator():
             ]
             for idx, answer_pid in enumerate(query["answer_pids"]):
                 query["answer_pids"][idx] = OFFSET + answer_pid
+            filtered_docs = []
             for doc in matching_docs:
                 doc["doc_id"] = OFFSET + doc["doc_id"]
-            D0_docs.extend(matching_docs)
+                if not doc["doc_id"] in sampled_doc_ids:
+                    filtered_docs.append(doc)
+                sampled_doc_ids.add(doc["doc_id"])
+            D0_docs.extend(filtered_docs)
         D0_queries.extend(sampled_queries)
         OFFSET += 10000000
         print(f"D0_queries:{len(D0_queries)}, D0_docs:{len(D0_docs)}")

@@ -32,14 +32,14 @@ def evaluate_dataset(k, rankings_path, previous_rankings_path=None):
             pids: List[int] = list(map(int, items[1:]))
             rankings[qid].extend(pids)
 
-    previous_rankings = defaultdict(list)
-    if previous_rankings_path:
-        with open(previous_rankings_path, "r") as f:
-            for line in f:
-                items = line.strip().split()
-                qid: int = int(items[0])
-                pids: List[int] = list(map(int, items[1:]))
-                rankings[qid].extend(pids)
+    # previous_rankings = defaultdict(list)
+    # if previous_rankings_path:
+    #     with open(previous_rankings_path, "r") as f:
+    #         for line in f:
+    #             items = line.strip().split()
+    #             qid: int = int(items[0])
+    #             pids: List[int] = list(map(int, items[1:]))
+    #             rankings[qid].extend(pids)
 
     success = 0
     num_q = 0
@@ -50,31 +50,32 @@ def evaluate_dataset(k, rankings_path, previous_rankings_path=None):
 
     for query in eval_queries:
         num_q += 1
+        qid = query["qid"]
         answer_pids = query["answer_pids"]
-
         hit = set(rankings[qid][:k]).intersection(answer_pids)
+
         if len(hit) > 0:
             success += 1
             recall += len(hit) / len(answer_pids)
 
-        for i, pid in enumerate(rankings[qid][:k]):
-            if pid in answer_pids:
-                mrr += 1 / (i + 1)
-                break
+        # for i, pid in enumerate(rankings[qid][:k]):
+        #     if pid in answer_pids:
+        #         mrr += 1 / (i + 1)
+        #         break
 
-        if previous_rankings_path:
-            previous_hit = set(previous_rankings[qid][:k]).intersection(answer_pids)
-            if previous_hit:
-                forget += (len(previous_hit) - len(hit)) / len(answer_pids)
-                fwt += (len(hit) - len(previous_hit)) / len(answer_pids)
+        # if previous_rankings_path:
+        #     previous_hit = set(previous_rankings[qid][:k]).intersection(answer_pids)
+        #     if previous_hit:
+        #         forget += (len(previous_hit) - len(hit)) / len(answer_pids)
+        #         fwt += (len(hit) - len(previous_hit)) / len(answer_pids)
 
     num_rankings = len(rankings)
 
     print(
-        f"# query: {num_rankings}: {num_q}\n",
-        f"Success@{k}: {success / num_rankings * 100:.1f}\n",
-        f"Recall@{k}: {recall / num_rankings * 100:.1f}\n",
-        f"MRR@{k}: {mrr / num_rankings:.4f}\n",
+        f"# query:  {num_q}\n",
+        f"Avg Success@{k}: {success / num_q * 100:.1f}\n",
+        f"Acg Recall@{k}: {recall / num_q * 100:.1f}\n",
+        # f"MRR@{k}: {mrr / num_rankings:.4f}\n",
     )
 
     if previous_rankings_path:

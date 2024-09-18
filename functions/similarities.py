@@ -22,7 +22,7 @@ def calculate_term(E_q, E_d):
         E_d = torch.stack(E_d, dim=0)
     E_q = E_q.to(device)
     E_d = E_d.to(device)
-    scores = torch.matmul(E_q, E_d.t())
+    scores = torch.matmul(E_q, E_d.T)
     max_scores, _ = torch.max(scores, dim=1)
     S_qd = max_scores.sum().item()
     return S_qd
@@ -38,7 +38,7 @@ def calculate_term_regl(E_q, E_d):
     E_q_normalized = torch.nn.functional.normalize(E_q, p=2, dim=1)
     E_d_normalized = torch.nn.functional.normalize(E_d, p=2, dim=1)
 
-    cosine_sim_matrix = torch.matmul(E_q_normalized, E_d_normalized.T)
-    max_scores, _ = torch.max(cosine_sim_matrix, dim=1)
+    normalized_score_matrix = torch.matmul(E_q_normalized, E_d_normalized.T)
+    max_scores, _ = torch.max(normalized_score_matrix, dim=1)
     S_qd_score = max_scores.mean().item()
     return S_qd_score

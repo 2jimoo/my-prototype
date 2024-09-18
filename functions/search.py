@@ -14,7 +14,8 @@ def cosine_search(query, k, documents, vector_dim=768):
     similarities = torch.matmul(query_tensor, data_tensor.T)
     _, indices = torch.topk(similarities, k, dim=1)
     indices = indices.cpu().numpy()[0]
-    # print(f'cosine_search indices:{indices}')
+    if len(indices) != len(set(indices)):
+        print(f"cosine_search indices:{indices}")
     return indices
 
 
@@ -26,7 +27,8 @@ def term_search(query, k, documents, vector_dim=768):
     similarities_tensor = torch.tensor(similarities).to(device)
     _, indices = torch.topk(similarities_tensor, k, dim=0)
     indices = indices.cpu().numpy()
-    # print(f'term_search indices: {indices}, {type(indices)}')
+    if len(indices) != len(set(indices)):
+        print(f"term_search indices:{indices}")
     return indices
 
 
@@ -38,7 +40,8 @@ def term_regl_search(query, k, documents, vector_dim=768):
     similarities_tensor = torch.tensor(similarities).to(device)
     _, indices = torch.topk(similarities_tensor, k, dim=0)
     indices = indices.cpu().numpy()
-    # print(f'term_regl_search indices: {indices}')
+    if len(indices) != len(set(indices)):
+        print(f"term_regl_search indices:{indices}")
     return indices
 
 

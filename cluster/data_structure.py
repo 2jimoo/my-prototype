@@ -141,6 +141,46 @@ class TokenEmbsActiveClusterFeatureVector(ActiveClusterFeatureVector):
         return std
 
 
+class TokenEmbsReglActiveClusterFeatureVector(ActiveClusterFeatureVector):
+    def __init__(
+        self, centroid_id, current_time_step=0, centroid: ClusterInstance = None
+    ):
+        super().__init__(centroid_id=centroid_id, current_time_step=current_time_step)
+        if centroid:
+            self.n = 1
+            # 헉 나 자신이면 mean, var 초기화할 값이 없어..
+            self.V1 = (
+                calculate_term_regl(centroid.token_embs, centroid.token_embs) / 2.0
+            )
+            self.V2 = self.V1**2
+            self.prototype = centroid
+
+    def update(self, x: ClusterInstance, t):
+        self.n += 1
+        self.V1 = self.V1 + calculate_term_regl(x.token_embs, self.prototype.token_embs)
+        self.V2 = (
+            self.V2 + calculate_term_regl(x.token_embs, self.prototype.token_embs) ** 2
+        )
+        self.t = t
+
+    def get_mean(self):
+        return self.V1 / self.n
+
+    def get_rms(self):
+        rms = np.sqrt(self.V2 / self.n)
+        print(f"centroid_id: {self.centroid_id} | rms: {rms}")
+        return rms
+
+    def get_std_norm(self):
+        return self.get_std()
+
+    def get_std(self):
+        mean = self.get_mean()
+        variance = (self.V2 / self.n) - (mean**2)
+        std = np.sqrt(variance)
+        return std
+
+
 class DeactiveClusterFeatureVector:
     def __init__(self, centroid_id, n, prototype: ClusterInstance, t):
         self.centroid_id = centroid_id
@@ -223,6 +263,38 @@ class TokenEmbsDeactiveClusterFeatureVector(DeactiveClusterFeatureVector):
 
     def build_ACFV(self) -> TokenEmbsActiveClusterFeatureVector:
         reactivated = TokenEmbsActiveClusterFeatureVector()
+        reactivated.centroid_id = self.centroid_id
+        reactivated.n = self.n
+        reactivated.V1 = self.V1
+        reactivated.V2 = self.V2
+        reactivated.t = self.t
+        reactivated.prototype = self.prototype
+        return reactivated
+
+
+class TokenEmbsReglDeactiveClusterFeatureVector(DeactiveClusterFeatureVector):
+    def __init__(self, centroid_id, n, V1, V2, prototype: ClusterInstance, t):
+        super().__init__(centroid_id=centroid_id, n=n, prototype=prototype, t=t)
+        self.V1 = V1
+        self.V2 = V2
+
+    def get_centroid_id(self):
+        return self.centroid_id
+
+    def get_mean(self):
+        return self.V1 / self.n
+
+    def get_std(self):
+        mean = self.get_mean()
+        variance = (self.V2 / self.n) - (mean**2)
+        std = np.sqrt(variance)
+        return std
+
+    def get_std_norm(self):
+        return self.get_std()
+
+    def build_ACFV(self) -> TokenEmbsReglActiveClusterFeatureVector:
+        reactivated = TokenEmbsReglActiveClusterFeatureVector()
         reactivated.centroid_id = self.centroid_id
         reactivated.n = self.n
         reactivated.V1 = self.V1

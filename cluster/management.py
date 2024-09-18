@@ -71,6 +71,7 @@ class ClusterManager:
         self.centroid_memory[int(centroid_id)] = reactivated_centroid
 
     def _add_centroid(self, x: ClusterInstance, current_time_step):
+        # print(f"seed x: {x.id}")
         new_id = int(self.centroid_id)
         self.centroid_memory[new_id] = self.strategy.build_ActiveClusterFeatureVector(
             centroid_id=new_id,
