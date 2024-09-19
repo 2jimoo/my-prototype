@@ -144,20 +144,18 @@ def generate_rank_file(
 
 
 if __name__ == "__main__":
-    init_cluster_num = 5
+    init_cluster_num = 50
     encoder = DenseEncoder().to(device)
     loss_fn = InfoNCELoss().to(device)  # NCLCompatibleInfoNCELoss().to(device)
 
-    strategy = TokenEmbeddingsTermReglSimilartyStrategy(encoder=encoder)
+    strategy = MeanPoolingCosineSimilartyStrategy(encoder=encoder)
     # TokenEmbeddingsTermSimilartyStrategy
     # MeanPoolingCosineSimilartyStrategy(encoder=encoder)
     # TokenEmbeddingsTermReglSimilartyStrategy
     cluster_manager = ClusterManager(
         strategy=strategy, init_cluster_num=init_cluster_num
     )
-    sampler = RandomSampler(
-        cluster_manager=cluster_manager
-    )  # RandomSampler(cluster_manager=cluster_manager)
+    sampler = NCLSampler(cluster_manager=cluster_manager)  # RandomSampler, NCLSampler
 
     optimizer = optim.Adam(encoder.parameters(), lr=1e-5)
     dataset = read_doc_dataset()
@@ -192,7 +190,7 @@ if __name__ == "__main__":
         rank_file_path=rank_file_path,
         cluster_manager=cluster_manager,
         k=3,
-        search_method="term",  # "cosine" #"term-regl"
+        search_method="cosine",  # "cosine" #"term-regl"
     )
     evaluate_dataset(k=5, rankings_path=rank_file_path)
     # print_assignment(cluster_manager)

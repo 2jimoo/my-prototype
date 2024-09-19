@@ -4,6 +4,8 @@ from .data_structure import (
     ActiveClusterFeatureVector,
     DeactiveClusterFeatureVector,
 )
+from sklearn.cluster import KMeans
+
 from config import Strategy
 from typing import List
 from utils import print_dicts, print_dict
@@ -95,6 +97,43 @@ class ClusterManager:
             prototype = self._find_prototype(self.centroid_memory[int(centroid_id)])
             centroid.update_prototype(prototype)
 
+    def _debug_assign_kmeans(
+        self, x_id, x_passage, x_mean_emb, x_token_embs, current_time_step
+    ):
+        x = ClusterInstance(x_id, x_passage, x_mean_emb, x_token_embs)
+        self.instance_memory[int(x.id)] = x
+        if len(self.instance_memory.keys()) == self.init_centroid_num:
+            print("clustering")
+            instances = list(self.instance_memory.values())
+            mean_embeddings = torch.stack(
+                [instance.mean_emb.cpu().squeeze() for instance in instances]
+            ).numpy()
+            # print(f"mean_embedding shape: {mean_embeddings[0].shape}")
+            kmeans = KMeans(n_clusters=2, random_state=42)  # 2개 클러스터
+            kmeans.fit(mean_embeddings)
+            for i, label in enumerate(kmeans.labels_):
+                self.assignment_table[label].append(instances[i].id)
+                if not label in self.centroid_memory.keys():
+                    self.centroid_memory[label] = (
+                        self.strategy.build_ActiveClusterFeatureVector(
+                            centroid_id=label,
+                            centroid=instances[i],
+                            current_time_step=current_time_step,
+                        )
+                    )
+                else:
+                    self.centroid_memory[label].update(instances[i], current_time_step)
+        elif len(self.instance_memory.keys()) > self.init_centroid_num:
+            print("assign")
+            centroid = self.find_closest_centroid(x)
+            distance = self.strategy.get_distance(x, centroid)
+            self._assign_instance(
+                x,
+                centroid.centroid_id,
+                current_time_step,
+                centroid.get_std_norm() > distance,  # get_std()
+            )
+
     def _assign(self, x_id, x_passage, x_mean_emb, x_token_embs, current_time_step):
         self._evict_cluster()
 
@@ -138,7 +177,10 @@ class ClusterManager:
                 self._add_centroid(x, current_time_step)
 
     def assign(self, x_id, x_passage, mean_embedding: Tensor, token_embedding: Tensor):
-        self._assign(x_id, x_passage, mean_embedding, token_embedding, self.time_step)
+        self._debug_assign_kmeans(
+            x_id, x_passage, mean_embedding, token_embedding, self.time_step
+        )
+        # self._assign(x_id, x_passage, mean_embedding, token_embedding, self.time_step)
         # self.time_step += 1
 
 
